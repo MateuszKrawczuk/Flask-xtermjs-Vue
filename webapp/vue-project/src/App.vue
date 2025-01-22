@@ -1,7 +1,7 @@
 <script setup>
 import HelloWorld from './components/HelloWorld.vue'
 import TheWelcome from './components/TheWelcome.vue'
-import SSHTerminal from '@/components/Terminal.vue'
+import SSHSshTerminal from '@/components/SSHTerminal.vue'
 </script>
 
 <template>
@@ -14,8 +14,8 @@ import SSHTerminal from '@/components/Terminal.vue'
   </header>
 
   <main>
-    <TheWelcome />
-        <SSHTerminal />
+    <!--    <TheWelcome />-->
+    <SSHSshTerminal />
   </main>
 </template>
 

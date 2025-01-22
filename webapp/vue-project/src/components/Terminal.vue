@@ -1,12 +1,11 @@
 <template>
-
   <div ref="terminal" class="terminal"></div>
 </template>
 
 <script>
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
-import io from "socket.io-client"
+import io from 'socket.io-client'
 import 'xterm/css/xterm.css'
 
 export default {
@@ -38,46 +37,39 @@ export default {
 
       window.addEventListener('resize', () => {
         this.fitAddon.fit()
+        this.ws.emit('resize', { cols: this.term.cols, rows: this.term.rows })
       })
     },
     connectWebSocket() {
       this.ws = io.connect('http://localhost:5000')
 
-        this.ws.emit(
-            'ssh_connect', JSON.stringify({
-            hostname: 'hostname',
-            username: 'username',
-            password: 'password',
-    }))
+      this.ws.emit('ssh_connect', {
+        hostname: 'hostname',
+        username: 'username',
+        password: 'password',
+      })
 
       this.ws.on('ssh_status', (event) => {
         console.log(event)
-        // const data = JSON.parse(event)
-        this.term.write('SSH Status: ' + event['status'] + '\r\n')
-        // this.term.write(data)
+        this.term.write('SSH Status: ' + event.status + '\r\n')
       })
 
       this.ws.on('ssh_output', (event) => {
-        this.term.write('' + event['output'])
+        this.term.write(event.output)
       })
 
-      this.ws.onmessage = (event) => {
-        const data = JSON.parse(event.data)
-        if (data.output) {
-          this.term.write(data.output)
-        }
-        if (data.error) {
-          this.term.write(data.error)
-        }
-      }
+      this.ws.on('connect_error', (error) => {
+        console.error('Connection error:', error)
+        this.term.write('\r\nConnection error. Please try again.\r\n')
+      })
 
-      this.ws.onclose = () => {
+      this.ws.on('disconnect', () => {
         this.term.write('\r\nSSH connection closed.\r\n')
-      }
+      })
     },
   },
   beforeDestroy() {
-    if (this.ws) {
+    if (this.ws && this.ws.connected) {
       this.ws.close()
     }
   },

@@ -1,9 +1,8 @@
 import threading
 
 from flask import Flask, request, jsonify
-from flask_socketio import SocketIO, send, emit
+from flask_socketio import SocketIO, emit
 import paramiko
-import json
 from io import StringIO
 
 app = Flask(__name__)
@@ -51,17 +50,18 @@ def handle_connect():
 def handle_disconnect():
     print('Client disconnected:', request.sid)
     if request.sid in ssh_connections:
-        ssh_connections[request.sid].close()
+        ssh_connection = ssh_connections[request.sid]
+        if 'ssh' in ssh_connection:
+            ssh_connection['ssh'].close()
         del ssh_connections[request.sid]
 
 @socketio.on('ssh_connect')
-def handle_ssh_connect(message):
-    print('Client connected:', message)
-    data = json.loads(message)
+def handle_ssh_connect(data):
+    print('Client connected:', data)
     hostname = data['hostname']
     port = data.get('port', 22)
     username = data['username']
-    password = data.get('password')
+    password = data['password']
     private_key = data.get('private_key')
 
     ssh = paramiko.SSHClient()
@@ -87,7 +87,10 @@ def handle_ssh_connect(message):
 
         emit('ssh-status', {'status': 'connected'})
     except Exception as e:
+        print(f"SSH connection error: {e}")
         emit('ssh-status', {'status': 'error', 'message': str(e)})
+        if ssh:
+            ssh.close()
 
 def read_shell_output(sid, shell):
     """
@@ -104,7 +107,19 @@ def read_shell_output(sid, shell):
                 socketio.emit('ssh_output', {'output': output}, room=sid)
         except Exception as e:
             print(f"Error reading shell output: {e}")
+            if sid in ssh_connections:
+                ssh_connections[sid]['ssh'].close()
+                del ssh_connections[sid]
             break
+
+@socketio.on('resize')
+def handle_resize(data):
+    if request.sid in ssh_connections:
+        shell = ssh_connections[request.sid]['shell']
+        try:
+            shell.resize_pty(width=data['cols'], height=data['rows'])
+        except Exception as e:
+            print(f"Error resizing terminal: {e}")
 
 @socketio.on('ssh_command')
 def handle_ssh_command(data):
