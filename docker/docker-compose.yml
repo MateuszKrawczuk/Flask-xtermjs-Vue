@@ -1,0 +1,41 @@
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: flask-backend
+    privileged: true
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    volumes:
+      - ../config:/app/config
+      - ../backend/logs:/app/backend/logs
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - FLASK_APP=app
+      - UWSGI_PROCESS=4
+      - UWSGI_THREADS=2
+      - UWSGI_BUFFER_SIZE=32768
+    restart: no
+    networks:
+      - terminal-network
+
+  frontend:
+    environment:
+      - VITE_BACKEND_URL=http://backend:5000
+    build:
+      context: ../webapp
+      dockerfile: Dockerfile
+    container_name: vue-frontend
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+    networks:
+      - terminal-network
+
+networks:
+  terminal-network:
+    driver: bridge
