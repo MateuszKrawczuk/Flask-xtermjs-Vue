@@ -1,9 +1,21 @@
 import threading
+import time
 
-from flask import Flask, request, jsonify
+from flask import Flask, Response, request, jsonify
 from flask_socketio import SocketIO, emit
 import paramiko
 from io import StringIO
+import logging 
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] [%(levelname)s] [%(name)s:%(lineno)d] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True
+)
+
+_logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'  # Klucz secret do Flask-SocketIO
@@ -13,9 +25,8 @@ socketio = SocketIO(app, cors_allowed_origins="*")  # Umożliwia połączenia z 
 ssh_connections = {}
 
 @app.route('/ssh/connect', methods=['POST'])
-def ssh_connect():
-    print('ssh_connect')
-    ssh_connection = paramiko.SSHClient()
+def ssh_connect() -> tuple[Response, int]:
+    _logger.debug('ssh_connect')
     data = request.json
     hostname = data['hostname']
     port = data.get('port', 22)
@@ -23,11 +34,10 @@ def ssh_connect():
     password = data.get('password')
     private_key = data.get('private_key')
 
-    print('paramiko')
+    _logger.debug('paramiko')
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    print('ssh')
-    # ssh.connect(hostname=hostname, port=port, username=username, password=password)
+    _logger.debug('ssh')
     try:
         if private_key:
             key_file = StringIO(private_key)
@@ -36,19 +46,19 @@ def ssh_connect():
         else:
             ssh.connect(hostname, port=port, username=username, password=password)
 
-        print('status: connected')
+        _logger.info('status: connected')
         return jsonify({"status": "connected"}), 200
     except Exception as e:
-        print('status: failed', e)
+        _logger.exception('status: failed')
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @socketio.on('connect')
-def handle_connect():
-    print('Client connected:', request.sid)
+def handle_connect() -> None:
+    _logger.info(f'Client connected: {request.sid}')
 
 @socketio.on('disconnect')
-def handle_disconnect():
-    print('Client disconnected:', request.sid)
+def handle_disconnect() -> None:
+    _logger.info(f'Client disconnected: {request.sid}')
     if request.sid in ssh_connections:
         ssh_connection = ssh_connections[request.sid]
         if 'ssh' in ssh_connection:
@@ -56,8 +66,8 @@ def handle_disconnect():
         del ssh_connections[request.sid]
 
 @socketio.on('ssh_connect')
-def handle_ssh_connect(data):
-    print('Client connected:', data)
+def handle_ssh_connect(data) -> None:
+    _logger.info(f'Client connected: {data}')
     hostname = data['hostname']
     port = data.get('port', 22)
     username = data['username']
@@ -87,49 +97,48 @@ def handle_ssh_connect(data):
 
         emit('ssh-status', {'status': 'connected'})
     except Exception as e:
-        print(f"SSH connection error: {e}")
+        _logger.exception("SSH connection error:")
         emit('ssh-status', {'status': 'error', 'message': str(e)})
         if ssh:
             ssh.close()
 
-def read_shell_output(sid, shell):
+def read_shell_output(sid, shell) -> None:
     """
     Funkcja do odczytywania danych z shell-a i wysyłania ich do klienta.
     """
-    while True:
-        if sid not in ssh_connections:
-            break  # Zakończ, jeśli klient się rozłączył
-
+    while sid in ssh_connections: # Kontynuuj, dopóki istnieje połączenie
         try:
             # Odczytaj dane z shell-a
             if shell.recv_ready():
                 output = shell.recv(1024).decode('utf-8')
                 socketio.emit('ssh_output', {'output': output}, room=sid)
         except Exception as e:
-            print(f"Error reading shell output: {e}")
+            _logger.exception("Error reading shell output:")
             if sid in ssh_connections:
                 ssh_connections[sid]['ssh'].close()
                 del ssh_connections[sid]
-            break
+            return
+        
+        time.sleep(0.005)  # Znacząca redukcja obciążenia CPU dzięki redukcji nadmiernej ilości iteracji
 
 @socketio.on('resize')
-def handle_resize(data):
+def handle_resize(data) -> None:
     if request.sid in ssh_connections:
         shell = ssh_connections[request.sid]['shell']
         try:
             shell.resize_pty(width=data['cols'], height=data['rows'])
-        except Exception as e:
-            print(f"Error resizing terminal: {e}")
+        except Exception:
+            _logger.exception("Error resizing terminal:")
 
 @socketio.on('ssh_command')
-def handle_ssh_command(data):
-    print('Client connected:', data)
+def handle_ssh_command(data) -> None:
+    _logger.info(f'Client connected: {data}')
     command = data['command']
     ssh = ssh_connections.get(request.sid)
 
     if ssh:
         try:
-            stdin, stdout, stderr = ssh.exec_command(command)
+            _, stdout, stderr = ssh.exec_command(command)
             output = stdout.read().decode()
             error = stderr.read().decode()
             emit('ssh_output', {'output': output, 'error': error})
@@ -139,7 +148,7 @@ def handle_ssh_command(data):
         emit('ssh_output', {'output': '', 'error': 'SSH connection not established'})
 
 @socketio.on('ssh_input')
-def handle_input_command(data):
+def handle_input_command(data) -> None:
     input_data = data['input']
     if request.sid in ssh_connections:
         shell = ssh_connections[request.sid]['shell']

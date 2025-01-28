@@ -16,8 +16,6 @@ RUN apt-get update && apt-get install -y \
     ssh \
     curl \
     iputils-ping \
-    uwsgi-core \
-    uwsgi-plugin-python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR $APP_HOME
@@ -26,12 +24,12 @@ COPY requirements.txt requirements.txt
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY . /backend/backendapp
-COPY wsgi.py /backend/
+COPY app.py /backend/
 COPY requirements.txt /backend/
-COPY uwsgi.ini /backend/
+COPY gunicorn.config.py /backend/
 
 RUN usermod -a -G dialout,plugdev root
 
 EXPOSE 5000
 
-CMD ["uwsgi", "--ini", "uwsgi.ini"]
+CMD ["gunicorn", "-c", "gunicorn.config.py", "app:app"]

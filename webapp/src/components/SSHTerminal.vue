@@ -12,7 +12,7 @@
       </div>
       <div>
         <label for="password">Hasło:</label>
-        <input v-model="password" id="password" type="password" placeholder="********" />
+        <input v-model="password" id="password" type="password" placeholder="********" @keyup.enter="connect"/>
       </div>
       <button @click="connect">Połącz</button>
     </div>

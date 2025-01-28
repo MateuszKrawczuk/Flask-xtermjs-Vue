@@ -15,9 +15,6 @@ services:
     environment:
       - FLASK_ENV=production
       - FLASK_APP=app
-      - UWSGI_PROCESS=4
-      - UWSGI_THREADS=2
-      - UWSGI_BUFFER_SIZE=32768
     restart: no
     networks:
       - terminal-network
